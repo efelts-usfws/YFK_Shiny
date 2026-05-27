@@ -270,7 +270,7 @@ ui <- page_navbar(
               value_box(
                 
                 title="Unique PIT Tag Detections, Current SY",
-                value=textOutput("ind_count_txt"),
+                value=uiOutput("ind_count_txt"),
                 showcase=fa("fish-fins"),
                 
                 
@@ -377,11 +377,30 @@ server <- function(input,output,session){
   # make an output of the number of individuals to 
   # got to the value box
   
-  output$ind_count_txt <- renderText({
+  # output$ind_count_txt <- renderText({
+  #   
+  #   nrow(req(ind.dat_reactive()))
+  #   
+  # })
+  # 
+  
+  output$ind_count_txt <- renderUI({
     
-    nrow(req(ind.dat_reactive()))
+    dat <- req(ind.dat_reactive())
+    
+    n_ind <- nrow(dat)
+    n_wf <- sum(!is.na(dat$wf_yfk))
+    n_fivemile <- sum(!is.na(dat$fivemile_yfk))
+    
+    tagList(
+      div(n_ind),
+      div(style = "font-size: 0.8rem;",
+          paste0("WF YFK: ", n_wf, " | Fivemile YFK: ", n_fivemile))
+    )
     
   })
+  
+  
   
   # reactive for number of new in the last week
   
