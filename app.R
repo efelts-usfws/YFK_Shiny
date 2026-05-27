@@ -192,6 +192,15 @@ lastweek_new <- individuals.dat %>%
 
 use_daily <- readRDS("data/use_complete_current")
 
+# read in upstream YFK array data
+
+us_daily <- readRDS("data/complete_current_us") |> 
+  mutate(site=case_when(
+    site == "wf_yfk" ~ "West Fork YFK",
+    site == "fivemile_yfk" ~ "YFK at Fivemile",
+    TRUE ~ site
+  ))
+
 # find two weeks prior to the first PIT tag
 # detection for the year, so that can
 # be the start for the date filter
@@ -308,8 +317,8 @@ ui <- page_navbar(
                      plotlyOutput("entry_plot"),
                      full_screen = T),
                 
-                card(card_header("Length Frequency"),
-                     plotlyOutput("lf_plot"),
+                card(card_header("Upper YFK PIT Detections"),
+                     plotlyOutput("entry_plot_us"),
                      full_screen = TRUE),
                 
                 card(card_header("Marking Locations"),
@@ -667,6 +676,22 @@ server <- function(input,output,session){
     
   })
   
+  
+  # make daily unique fish at upstream yfk arrays
+  # for current year filter by user selected species
+  
+  daily_reactive_us <- reactive({
+    
+    req(input$user_spp)
+    
+    dat <- us_daily |> 
+      filter(species==input$user_spp)
+    
+    
+  })
+  
+  
+  
   # make the plot for USE accumulation
   
   output$salmoncomp_plot <- renderPlotly({
@@ -708,6 +733,47 @@ server <- function(input,output,session){
   output$entry_plot <- renderPlotly({
     
     plot1 <- dailyentry_reactive()
+    
+    ggplotly(plot1,
+             tooltip=c("text"))
+    
+  })
+  
+  # make the plot for daily numbers of pit tags 
+  # at the upstream YFK arrays
+  
+  dailyentry_reactive_us <- reactive({
+    
+    dat <- daily_reactive_us()|> 
+      mutate( n = replace_na(n, 0),
+              entry_date = as_date(with_tz(entry_date,
+                                           tz="America/Los_Angeles")))
+    
+    
+    req(nrow(dat)>0,
+        any(dat$sy_total > 0, na.rm = TRUE))
+    
+    
+    entry.plot <- ggplot()+
+      geom_col(data=dat,fill="dodgerblue",color="black",
+               aes(x=entry_date,y=n,
+                   text=str_c(" Date:",entry_date,
+                              "<br>","Number Fish Entered:",n,
+                              sep=" ")))+
+      facet_wrap(~site)+
+      scale_x_date(date_breaks = "1 week", date_labels="%b %d")+
+      theme_bw()+
+      theme(axis.text.x=element_text(angle=45,hjust=1))+
+      labs(x="Date at PIT Array",
+           y="Number of unique PIT-Tagged Fish")
+    
+  })
+  
+  # Render the daily tally plot as a plotly object
+  
+  output$entry_plot_us <- renderPlotly({
+    
+    plot1 <- dailyentry_reactive_us()
     
     ggplotly(plot1,
              tooltip=c("text"))
