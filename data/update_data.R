@@ -79,6 +79,12 @@ yfk_detections.dat <- vroom(file = "https://api.ptagis.org/reporting/reports/efe
   filter(spawn_year==year(today()))
 
 
+us_id <- yfk_detections.dat |> 
+  filter(observation_sitecode %in% c("YFW","YF5")) |> 
+  group_by(pit_id) |> 
+  slice(which.min(observation_datetime))
+
+
 # where were juveniles marked?
 
 juv_mark.sum <- yfk_detections.dat |> 
@@ -154,7 +160,14 @@ yfk_individuals.summary <- yfk_detections.dat |>
   group_by(pit_id)  |>  
   summarize(yfk_first=first(observation_datetime[yfk==TRUE]),
             yfk_entry_final=last(observation_datetime[yfk_entry==TRUE]),
+            yfk_count=sum(yfk==TRUE),
             yfk_diff=as.numeric(yfk_entry_final-yfk_first,units="days"),
+            wf_yfk = first(observation_datetime[observation_sitecode=="YFW"]),
+            wf_yfk_count=sum(observation_sitecode=="YFW"),
+            fivemile_yfk = first(observation_datetime[observation_sitecode=="YF5"]),
+            fivemile_yfk_count=sum(observation_sitecode=="YF5"),
+            upstream_count=sum(fivemile_yfk_count,
+                               wf_yfk_count,na.rm=T),
             length_mm=mean(length_mm,na.rm=T),
             release_lifestage=first(release_lifestage)) |>  
   left_join(dat.mark,by="pit_id") 
@@ -189,6 +202,59 @@ yfk_location.summary <- yfk_detections.dat |>
   summarize(release_sitecode=first(release_sitecode),
             release_lifestage=first(release_lifestage))  |>  
   left_join(ptagis.dat,by=c("release_sitecode"="site_code"))
+
+# also build daily summaries for upstream arrays
+
+yfk_us.summary <- yfk_individuals.summary |> 
+  filter(upstream_count>0) 
+
+if(nrow(yfk_us.summary)>0){
+  
+  sites <- c("wf_yfk","fivemile_yfk")
+  
+  yfk_us_entry.summary <- yfk_us.summary |> 
+    pivot_longer(cols=c("wf_yfk","fivemile_yfk"),
+                 names_to="site",
+                 values_to="entry_date") |> 
+    filter(!is.na(entry_date)) |> 
+    count(site, species, entry_date, name = "n") |> 
+    group_by(site, species) |>
+    arrange(entry_date, .by_group = TRUE) |>
+    mutate(
+      sy_total = sum(n),
+      cumulative_total = cumsum(n),
+      daily_prop = n / sy_total,
+      daily_cumulative = cumsum(daily_prop)
+    ) |>
+    ungroup()
+  
+  yfk_us_entry.summary <- yfk_us_entry.summary |>
+    complete(
+      site = sites,
+      species = c("Bull Trout", "Chinook", "Steelhead"),
+      fill = list(
+        n = 0,
+        sy_total = 0,
+        cumulative_total = 0,
+        daily_prop = 0,
+        daily_cumulative = 0
+      )
+    )
+  
+}else{
+  yfk_us_entry.summary <- tibble(
+    site = rep(sites, each = 3),
+    entry_date = as_date(today()),
+    species = rep(c("Bull Trout", "Chinook", "Steelhead"), times = length(sites)),
+    n = 0,
+    sy_total = 0,
+    cumulative_total = 0,
+    daily_prop = 0,
+    daily_cumulative = 0
+  )
+}
+
+
 
 
 # now also grab yfk water data from USGS gaging station
@@ -368,6 +434,55 @@ complete_current <- yfk_entry.summary %>%
            TRUE ~ year(today())
          ))
 
+# also make complete current for upstream arrays
+
+complete_current_us <- yfk_us_entry.summary %>% 
+  filter(species %in% c("Bull Trout", "Chinook", "Steelhead")) |> 
+  mutate(
+    site = factor(site, levels = c("wf_yfk", "fivemile_yfk")),
+    day_of_year = yday(entry_date),
+    dummy_date = case_when(
+      species == "Steelhead" & day_of_year < 183 ~ as.Date(day_of_year, origin = "1976-01-01"),
+      TRUE ~ as.Date(day_of_year - 1, origin = "1976-01-01")
+    )
+  ) |> 
+  left_join(species_max_dates, by = "species") |> 
+  group_by(site, species) |> 
+  mutate(
+    min_date = if_else(
+      all(is.na(dummy_date)),
+      min(max_date, na.rm = TRUE),
+      min(dummy_date, na.rm = TRUE)
+    )
+  ) |> 
+  complete(
+    dummy_date = seq(min(min_date, na.rm = TRUE), max(max_date, na.rm = TRUE), by = "day")
+  ) |> 
+  ungroup() |> 
+  select(-c(min_date, max_date)) |> 
+  mutate(
+    n = replace_na(n, 0),
+    daily_prop = replace_na(daily_prop, 0),
+    sy_total = replace_na(sy_total, 0),
+    cumulative_total = replace_na(cumulative_total, 0)
+  ) |> 
+  group_by(site, species) |> 
+  arrange(dummy_date, .by_group = TRUE) |> 
+  fill(sy_total, .direction = "downup") |> 
+  mutate(
+    cumulative_total = cumsum(n),
+    daily_cumulative = if_else(
+      sy_total > 0,
+      cumulative_total / sy_total,
+      0
+    ),
+    spawn_year = case_when(
+      species == "Steelhead" & yday(dummy_date) > 183 ~ year(today()) + 1,
+      TRUE ~ year(today())
+    )
+  ) |> 
+  ungroup()
+
 # 
 #   complete(yfk_entry_date=seq(as_date("2024-07-01"),today(),
 #                              by="day")) %>% 
@@ -437,6 +552,8 @@ run_stats <- alldaily |>
 saveRDS(run_stats,"data/run_stats")
 saveRDS(alldaily,"data/alldaily")
 saveRDS(projected_pts,"data/projections")
+saveRDS(complete_current_us,
+        "data/complete_current_us")
 
 # add USE array current year to track as well
 
