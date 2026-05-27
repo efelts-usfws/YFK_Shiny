@@ -16,6 +16,7 @@ library(scales)
 library(fontawesome)
 library(leaflet)
 library(leafem)
+library(tidyr)
 
 conflicts_prefer(DT::renderDT,
                  dplyr::filter,
@@ -64,7 +65,10 @@ individuals.dat <- readRDS("data/individuals")
 
 individuals.export <- individuals.dat |> 
   select(pit_id,species,release_lifestage,release_sitecode,
-         release_datetime,length_mm,yfk_entry=yfk_first) |> 
+         release_datetime,length_mm,yfk_entry=yfk_first,
+         yfk_latest=yfk_entry_final,
+         yfk_count,upstream_count,wf_yfk,wf_yfk_count,
+         fivemile_yfk,fivemile_yfk_count) |> 
   mutate(observation_year=year(yfk_entry),
          spawn_year=case_when(
            yday(yfk_entry)>=183 & species=="Steelhead" ~ observation_year+1,
