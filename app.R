@@ -325,8 +325,8 @@ ui <- page_navbar(
                      plotlyOutput("entry_plot_us"),
                      full_screen = TRUE),
                 
-                card(card_header("Marking Locations"),
-                     DTOutput("marklocation_summary"),
+                card(card_header("Individual Summaries"),
+                     DTOutput("individual_summary"),
                      full_screen = TRUE)
                 
                 
@@ -883,6 +883,21 @@ server <- function(input,output,session){
     dat <- marksummary_reactive()
     
     dat
+    
+  })
+  
+  output$individual_summary <- renderDT({
+    
+    dat <- individuals.export_reactive() |> 
+      select(pit_id,release_sitecode,release_datetime,
+             length_mm,yfk_entry,yfk_latest,yfk_count,
+             upstream_count,wf_yfk,fivemile_yfk,
+             wf_yfk_count,fivemile_yfk_count)
+    
+    datatable(dat,
+              filter="top",
+              options=list(pageLength=25))
+    
     
   })
   
