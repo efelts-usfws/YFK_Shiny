@@ -102,8 +102,10 @@ sy_current <- tibble(species=c("Steelhead","Chinook",
 alldaily.dat <- readRDS("data/alldaily") |> 
   filter(spawn_year>2012) |> 
   left_join(sy_current,by=c("species")) |> 
-  mutate(yr_category=ifelse(spawn_year==today_spawn_year,
-                            "Current","Previous"),
+  mutate(yr_category=case_when(
+    spawn_year==today_spawn_year ~ "Current",
+    spawn_year == (today_spawn_year - 1) ~ "Last Completed",
+    TRUE ~ "Previous"),
          dummy_jday=yday(dummy_date))
 
 
@@ -639,17 +641,30 @@ server <- function(input,output,session){
     
     xlimit <- datelimit_reactive() 
     
+    yr_cols <- c(
+      "Current" = "steelblue",
+      "Last Completed" = "red",
+      "Previous" = "gray70"
+    )
     
     comp_plot <-dat %>% 
+      mutate(
+        yr_category = factor(
+          yr_category,
+          levels = c("Current", "Last Completed", "Previous")
+        )
+      ) |> 
       ggplot(aes(x=dummy_date,y=daily_cumulative_n,
-                 group=spawn_year,color=as.factor(yr_category)))+
+                 group=spawn_year,color=yr_category))+
       geom_line(aes(text=str_c(" Date:",format(dummy_date, "%b %d"),
                                "<br>",
                                "Spawn Year:",spawn_year,
                                "<br>",
                                "Number In:",round(daily_cumulative_n),sep=" ")))+
       theme_bw()+
-      scale_color_manual(values=c("steelblue","gray70"))+
+      scale_color_manual(values=yr_cols,
+                         limits=names(yr_cols),
+                         drop=FALSE)+
       theme(axis.text.x=element_text(angle=45,hjust=1))+
       scale_x_date(date_breaks="1 month", 
                    date_labels="%b",
