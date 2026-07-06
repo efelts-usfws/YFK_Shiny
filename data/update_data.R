@@ -261,37 +261,44 @@ if(nrow(yfk_us.summary)>0){
 
 yfk.site <- "USGS-13296000"
 
-
-# temp is coded as 00010, discharge as 00060,
-# we'll go for both of those
+# temp is coded as 00010, discharge as 00060
 
 parm.cd <- c("00010","00060")
 
+# fetch with retry logic
 
-# put today's date into text format
-# to feed into the query of daily
-# water data
+yfk.daily <- NULL
+for (i in 1:3) {
+  yfk.daily <- tryCatch(
+    read_waterdata_daily(yfk.site, parameter_code = parm.cd),
+    error = function(e) {
+      message("Attempt ", i, " failed: ", conditionMessage(e))
+      Sys.sleep(15)
+      NULL
+    }
+  )
+  if (!is.null(yfk.daily)) break
+}
 
-today.text <- as.character(today(tz="America/Los_Angeles"))
+if (is.null(yfk.daily) || nrow(yfk.daily) == 0) {
+  warning("YFK water data unavailable — skipping and retaining previous saved data.")
+} else {
+  yfk.dat <- yfk.daily |> 
+    filter(time >= as_date("2025-01-01"),
+           time <= today()) |>  
+    mutate(group = 1) |> 
+    filter(parameter_code == "00060",
+           statistic_id == "00003") |> 
+    st_drop_geometry() |> 
+    select(date = time,
+           mean_discharge = value,
+           qualifier) |> 
+    mutate(year = year(date),
+           dummy_date = as.Date(yday(date) - 1, origin = "1976-01-01")) 
+  
+  saveRDS(yfk.dat, "data/yfk_flow")
+}
 
-yfk.daily <- read_waterdata_daily(yfk.site,
-                                  parameter_code = parm.cd)
-
-yfk.dat <-yfk.daily |> 
-  filter(time>=as_date("2025-01-01"),
-         time<=today()) |>  
-  mutate(group=1) |> 
-  filter(parameter_code=="00060",
-         statistic_id=="00003") |> 
-  st_drop_geometry() |> 
-  select(date=time,
-         mean_discharge=value,
-         qualifier)|> 
-  mutate(year=year(date),
-         dummy_date= as.Date(yday(date)-1,origin="1976-01-01")) 
-
-
-saveRDS(yfk.dat,"data/yfk_flow")
 
 
 # for individuals bind together species
