@@ -300,7 +300,6 @@ if (is.null(yfk.daily) || nrow(yfk.daily) == 0) {
 }
 
 
-
 # for individuals bind together species
 
 # save species separately
